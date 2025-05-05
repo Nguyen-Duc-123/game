@@ -4,14 +4,18 @@
 #include <SDL2/SDL_ttf.h>
 #include <iostream>
 #include <vector>
+#include <fstream>
 #include <cstdlib>
 #include <ctime>
 #include <string>
 #include <bird.h>
 #include <data.h>
+#include <load.h>
+#include <Close.h>
+#include <init.h>
 using namespace std;
 
-enum GameState { MENU, PLAY };
+enum GameState { MENU, PLAY, HIGHSCORE };
 GameState gameState = MENU;
 
 struct Pipe {
@@ -19,89 +23,18 @@ struct Pipe {
     bool passed = false;
 };
 
+
 vector<Pipe> pipes;
 Bird bird;
-
-Mix_Chunk* Collision = nullptr;
-Mix_Chunk* jumpSound = nullptr;
-Mix_Chunk* pointSound = nullptr;
-int score = 0;
-int highscore = 0;
-TTF_Font *font = nullptr;
-
-SDL_Texture* LoadTexture(SDL_Renderer* renderer, const string& path) {
-    SDL_Texture* texture = IMG_LoadTexture(renderer, path.c_str());
-    if (!texture) cout << "IMG_LoadTexture Error: " << IMG_GetError() << endl;
-    return texture;
-}
-bool Init() {
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) return false;
-
-    if (!IMG_Init(IMG_INIT_PNG)) return false;
-
-    //  Khởi tạo SDL_mixer
-    if (Mix_Init(MIX_INIT_MP3 | MIX_INIT_OGG) == 0) {
-        cout << "Khởi tạo SDL_Mixer thất bại " << Mix_GetError() << endl;
-        return false;
-    }    
-    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
-        cout << "Khởi tạo SDL_Mixer thất bại: " << Mix_GetError() << endl;
-        return false;
-    }
-    // Khởi tạo SDL_ttf
-    if(TTF_Init()==-1){
-        cout << "Khởi tạo SDL_ttf thất bại"<<endl;
-        return false;
-    }
-    // Khởi tạo cửa sổ
-    window = SDL_CreateWindow("Flappy Bird", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-    if (!window) return false;
-
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (!renderer) return false;
-
-    srand(time(0));
-    return true;
-}
+SDL_Rect startButton = { 320, 100, 200, 60 };
+SDL_Rect highScoreButton = { 320, 250, 200, 60 };
+SDL_Rect quitButton = { 320, 500, 200, 60 };
 
 
-void LoadMedia() {
-    backgroundTexture = LoadTexture(renderer, "C:\\game\\assets\\images\\background10.png");
-    birdTexture = LoadTexture(renderer, "C:\\game\\assets\\images\\bird.png");
-    pipeTexture = LoadTexture(renderer, "C:\\game\\assets\\images\\pipe1.png");
-    startTexture = LoadTexture(renderer, "C:\\game\\assets\\images\\start2.png");
+int pipeSpeed = PIPE_SPEED;
 
-    pointSound = Mix_LoadWAV("C:\\game\\assets\\audio\\assets_audio_point.wav");
-    jumpSound = Mix_LoadWAV("C:\\game\\assets\\audio\\assets_audio_fly.wav");
-    if (!jumpSound) {
-        cout << "Lỗi tải âm thanh nhảy: " << Mix_GetError() << endl;
-    }
-    Collision = Mix_LoadWAV("C:\\game\\assets\\audio\\assets_audio_collision.wav");
-    if(!Collision){
-        cout << "Lỗi tải âm thanh khi chạm cột " << Mix_GetError() << endl;    
-    }
-    font = TTF_OpenFont("C:\\game\\assets\\font\\font1.ttf", 24); 
-    if (!font) {
-    cout << "Load font không thành công " << TTF_GetError() << endl;
-    }
-}
 
-void Close() {
-    Mix_FreeChunk(jumpSound);
-    Mix_CloseAudio();
-    SDL_DestroyTexture(backgroundTexture);
-    SDL_DestroyTexture(birdTexture);
-    SDL_DestroyTexture(pipeTexture);
-    SDL_DestroyTexture(startTexture);
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    TTF_CloseFont(font);
-    TTF_Quit();
-    IMG_Quit();
-    SDL_Quit();
-}
-
-void GeneratePipe() {
+void GeneratePipe() {   // Thêm các cột vào vector
     int minHeight = 50;
     int maxHeight = SCREEN_HEIGHT - PIPE_GAP - minHeight;
     int height = minHeight + rand() % (maxHeight - minHeight);
@@ -121,7 +54,7 @@ void RenderScore(){
     if(!textSurface){
         cout << "Không thể tải được textSurface";
         return;
-    } 
+    }
     SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
     SDL_FreeSurface(textSurface);
     if (!textTexture) {
@@ -133,15 +66,64 @@ void RenderScore(){
 
     // Vẽ điểm số lên màn hình
     SDL_RenderCopy(renderer, textTexture, NULL, &dstRect);
-
     SDL_DestroyTexture(textTexture);
 
 }
 
+
+void LoadHighScore() {
+    ifstream file("highscore.txt");
+    if (file.is_open()) {
+        file >> highScore;
+        file.close();
+    } 
+}
+void SaveHighScore() {
+    ofstream file("highscore.txt");
+    if (file.is_open()) {
+        file << highScore << endl;
+        file.close();
+    } 
+}
+
+void RenderHighScore() {
+    SDL_RenderClear(renderer); // Xóa màn hình trước khi vẽ high score
+    SDL_Color textColor = {255, 255, 255};
+    string hsText = "High Score: " + to_string(highScore);
+    SDL_Surface* textSurface = TTF_RenderText_Solid(font, hsText.c_str(), textColor);
+    SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+
+    int textWidth = textSurface->w;
+    int textHeight = textSurface->h;
+    SDL_Rect textRect = { 400 - textWidth / 2, 300 - textHeight / 2, textWidth, textHeight };
+
+    SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+
+    // Thêm một dòng hướng dẫn để quay lại MENU (tùy chọn)
+    string returnText = "Press any key to return";
+    SDL_Surface* returnSurface = TTF_RenderText_Solid(font, returnText.c_str(), textColor);
+    SDL_Texture* returnTexture = SDL_CreateTextureFromSurface(renderer, returnSurface);
+    SDL_Rect returnRect = { 400 - (int)returnSurface->w / 2, 400, returnSurface->w, returnSurface->h };
+    SDL_RenderCopy(renderer, returnTexture, NULL, &returnRect);
+    SDL_FreeSurface(returnSurface);
+    SDL_DestroyTexture(returnTexture);
+
+    SDL_FreeSurface(textSurface);
+    SDL_DestroyTexture(textTexture);
+    SDL_RenderPresent(renderer);
+}
+
+
 void Render() {
     SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, backgroundTexture, nullptr, nullptr);
-
+    if (score >= 10 && score < 30 && backgroundTexture2) {
+        SDL_RenderCopy(renderer, backgroundTexture2, nullptr, nullptr);
+    } else if(score >= 30 && backgroundTexture3) {
+        SDL_RenderCopy(renderer, backgroundTexture3, nullptr, nullptr);
+    }
+    else {
+        SDL_RenderCopy(renderer , backgroundTexture , nullptr, nullptr );
+    }
     for (auto& pipe : pipes) {
         SDL_Rect topPipe = {pipe.x, 0, PIPE_WIDTH, pipe.height};
         SDL_RenderCopyEx(renderer, pipeTexture, nullptr, &topPipe, 0, nullptr, SDL_FLIP_VERTICAL);
@@ -149,17 +131,27 @@ void Render() {
         SDL_RenderCopy(renderer, pipeTexture, nullptr, &bottomPipe);
     }
 
+    SDL_Texture* currentBirdTexture = birdTextureNormal;
+
+    if (bird.velocityY < -2) {
+        currentBirdTexture = birdTextureFly;     // Bay lên
+    } else if (bird.velocityY > 2) {
+        currentBirdTexture = birdTextureFall;     // Rơi xuống
+    }
+
     SDL_Rect birdRect = {(int)bird.x, (int)bird.y, 50, 50};
-    SDL_RenderCopy(renderer, birdTexture, nullptr, &birdRect);
-    RenderScore(); 
-    SDL_RenderPresent(renderer); 
+    SDL_RenderCopy(renderer, currentBirdTexture, nullptr, &birdRect);
+
+    RenderScore();
+    SDL_RenderPresent(renderer);
 }
 
 
 void HandleEvents(SDL_Event& e) {
     if (e.type == SDL_QUIT) {
         exit(0);
-    } else if (e.type == SDL_KEYDOWN) {
+    }
+    else if (e.type == SDL_KEYDOWN) {
         if (e.key.keysym.sym == SDLK_SPACE) {
             if (gameState == MENU) {
                 gameState = PLAY;
@@ -168,15 +160,38 @@ void HandleEvents(SDL_Event& e) {
                 if (jumpSound) {
                     Mix_PlayChannel(-1, jumpSound, 0);
                 }
+            } else if (gameState == HIGHSCORE) {
+                gameState = MENU; // Quay lại menu khi nhấn phím bất kỳ ở màn hình Highscore
             }
+        }
+    }
+    else if (e.type == SDL_MOUSEBUTTONDOWN) {
+        int x = e.button.x;
+        int y = e.button.y;
+
+        if (gameState == MENU) {
+            if (x >= startButton.x && x <= startButton.x + startButton.w && y >= startButton.y && y <= startButton.y + startButton.h) {
+                gameState = PLAY;
+            }
+            // Xử lý nút Highscore
+            else if (x >= highScoreButton.x && x <= highScoreButton.x + highScoreButton.w && y >= highScoreButton.y && y <= highScoreButton.y + highScoreButton.h) {
+                gameState = HIGHSCORE;
+            }
+            else if (x >= quitButton.x && x <= quitButton.x + quitButton.w && y >= quitButton.y && y <= quitButton.y + quitButton.h) {
+                exit(0);
+            }
+        }
+        else if (gameState == HIGHSCORE) {
+            gameState = MENU; // Quay lại menu khi nhấn chuột ở màn hình Highscore
         }
     }
 }
 
-bool CheckCollision() {
+
+bool CheckCollision() {         // Xử lí va chạm
     for (auto& pipe : pipes) {
-        if (bird.x + 50 > pipe.x && bird.x < pipe.x + PIPE_WIDTH) {
-            if (bird.y < pipe.height || bird.y + 50 > pipe.height + PIPE_GAP) {
+        if (bird.x + 45 > pipe.x && bird.x < pipe.x + PIPE_WIDTH) {
+            if (bird.y < pipe.height || bird.y + 45 > pipe.height + PIPE_GAP) {
                 return true;
             }
         }
@@ -186,25 +201,29 @@ bool CheckCollision() {
 
 void Update() {
     bird.Update();
-
+    if (score > 5) pipeSpeed = PIPE_SPEED + 2;
+    else if(score > 10) pipeSpeed = PIPE_SPEED + 3;
+    else pipeSpeed = PIPE_SPEED;
     for (auto& pipe : pipes) {
         pipe.x -= PIPE_SPEED;
-
         if (!pipe.passed && bird.x > pipe.x + PIPE_WIDTH) {
             pipe.passed = true;
             score++;
+            Mix_PlayChannel(-1 , pointSound , 0);
         }
     }
-
     if (!pipes.empty() && pipes[0].x + PIPE_WIDTH < 0) {
         pipes.erase(pipes.begin());
     }
-
     if (pipes.empty() || pipes.back().x < SCREEN_WIDTH - 250) {
         GeneratePipe();
     }
-
     if (CheckCollision()) {
+        cout << "Game Over! Score: " << score << ", High Score hiện tại: " << highScore << endl;
+        if (score > highScore) {
+            highScore = score;
+            SaveHighScore();
+        }
         if(Collision){
             Mix_PlayChannel(-1 , Collision , 0);
         }
@@ -213,12 +232,14 @@ void Update() {
         bird = Bird();
         pipes.clear();
         score = 0 ;
+        LoadHighScore();
     }
 }
 
 int main(int argc, char* argv[]) {
     if (!Init()) return -1;
     LoadMedia();
+    LoadHighScore(); // Tải điểm cao nhất khi khởi động game
 
     SDL_Event e;
 
@@ -232,6 +253,8 @@ int main(int argc, char* argv[]) {
         } else if (gameState == PLAY) {
             Update();
             Render();
+        } else if (gameState == HIGHSCORE) {
+            RenderHighScore();
         }
 
         SDL_Delay(16);

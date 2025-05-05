@@ -6,5 +6,6 @@ struct Pipe {
     int x, height;
 };
 
+
 #endif
 
